@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Election Assistant</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Google Cloud AI Demo</p>
+        <h1>Election Assistant</h1>
+      </div>
+      <span id="health" class="status">Checking services</span>
+    </header>
+
+    <main class="layout">
+      <section class="panel profile-panel" aria-labelledby="profile-title">
+        <h2 id="profile-title">Your Voting Profile</h2>
+        <form id="profile-form" class="form">
+          <label>
+            Age
+            <input id="age" type="number" min="0" max="130" value="18" required />
+          </label>
+          <label>
+            Location
+            <input id="location" type="text" maxlength="120" value="New Delhi" required />
+          </label>
+          <label>
+            Language
+            <input id="language" type="text" maxlength="40" value="English" />
+          </label>
+          <label class="checkbox">
+            <input id="first-time" type="checkbox" checked />
+            First-time voter
+          </label>
+          <button type="submit">Save Profile</button>
+        </form>
+        <p id="profile-guidance" class="guidance" aria-live="polite"></p>
+      </section>
+
+      <section class="panel assistant-panel" aria-labelledby="chat-title">
+        <div class="section-head">
+          <h2 id="chat-title">Ask the Assistant</h2>
+          <div class="quick-actions" aria-label="Quick actions">
+            <button data-message="Check my eligibility">Check Eligibility</button>
+            <button data-message="Show my election timeline">View Timeline</button>
+            <button data-message="What documents do I need to vote?">Required Documents</button>
+          </div>
+        </div>
+        <div id="chat-log" class="chat-log" aria-live="polite"></div>
+        <form id="chat-form" class="chat-form">
+          <label class="sr-only" for="message">Message</label>
+          <input id="message" type="text" maxlength="1200" placeholder="Ask how to vote, eligibility, or documents..." required />
+          <button type="submit">Send</button>
+        </form>
+      </section>
+
+      <section class="panel timeline-panel" aria-labelledby="timeline-title">
+        <div class="section-head">
+          <h2 id="timeline-title">Personal Timeline</h2>
+          <button id="refresh-timeline" type="button">Refresh</button>
+        </div>
+        <ol id="timeline" class="timeline"></ol>
+      </section>
+
+      <section class="panel centers-panel" aria-labelledby="centers-title">
+        <h2 id="centers-title">Polling Center Lookup</h2>
+        <div id="centers" class="centers"></div>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
