@@ -45,6 +45,8 @@ class ChatResponse(BaseModel):
     user_id: str
     history: list[ChatMessage]
     data_source: str
+    agent: str | None = None
+    intent: str | None = None
 
 
 class TimelineStep(BaseModel):

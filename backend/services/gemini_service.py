@@ -34,7 +34,15 @@ class GeminiService:
             logger.warning("Gemini client unavailable: %s", exc)
             return None
 
-    def answer(self, message: str, profile: UserProfile | None, history: list[ChatMessage]) -> tuple[str, str]:
+    def answer(
+        self,
+        message: str,
+        profile: UserProfile | None,
+        history: list[ChatMessage],
+        agent_instruction: str | None = None,
+        use_google_search: bool = False,
+        use_google_maps: bool = False,
+    ) -> tuple[str, str]:
         client = self._get_client()
         if not client:
             return self._fallback_answer(message, profile), "local-fallback"
@@ -42,10 +50,12 @@ class GeminiService:
         profile_text = profile.model_dump_json() if profile else "No profile saved yet."
         timeline = generate_timeline("current-user", profile)
         history_text = "\n".join(f"{item.role}: {item.content}" for item in history[-8:])
+        specialist_instruction = agent_instruction or "Answer as the general election process assistant."
         prompt = f"""
 You are a careful, non-partisan Election Assistant. Help users understand election process,
 eligibility, documents, registration, polling day, and result timelines. Never endorse a party
 or candidate. Encourage users to verify final rules on official election authority websites.
+Specialist role: {specialist_instruction}
 
 User profile: {profile_text}
 Personalized timeline: {timeline.model_dump_json()}
@@ -56,19 +66,35 @@ User asks: {message}
 
 Respond in clear steps, with accessible language and any important safety or eligibility caveats.
 Keep the answer concise, usually under 180 words, unless the user asks for a long explanation.
+If Google Search grounding is available, use it for recent, current, live, latest, result, schedule,
+or news questions and mention that election dates and results should be checked with official sources.
 """
         try:
+            tools: list[types.Tool] = []
+            if use_google_search:
+                tools.append(types.Tool(google_search=types.GoogleSearch()))
+            if use_google_maps:
+                tools.append(types.Tool(google_maps=types.GoogleMaps()))
             response = client.models.generate_content(
                 model=self.settings.gemini_model,
                 contents=prompt,
-                config=types.GenerateContentConfig(temperature=0.35, max_output_tokens=2048),
+                config=types.GenerateContentConfig(
+                    temperature=0.35,
+                    max_output_tokens=2048,
+                    tools=tools or None,
+                ),
             )
             text = (response.text or "").strip()
             if not text:
                 return self._fallback_answer(message, profile), "local-fallback"
             if self._looks_incomplete(text):
                 text = f"{text}\n\n{self._fallback_answer(message, profile)}"
-            return text, "gemini"
+            source = "gemini"
+            if use_google_search:
+                source = "gemini+google-search"
+            if use_google_maps:
+                source = f"{source}+google-maps"
+            return text, source
         except Exception as exc:
             logger.warning("Gemini generation failed: %s", exc)
             return self._fallback_answer(message, profile), "local-fallback"

@@ -2,7 +2,7 @@ import importlib.metadata
 
 from backend.config import Settings
 from backend.models import ChatMessage, UserProfile
-from backend.services.adk_agent import ElectionAdkAgent
+from backend.services.adk_agent import ElectionAdkAgent, google_maps_polling_guidance
 from backend.services.firestore_service import FirestoreService
 from backend.services.gemini_service import GeminiService
 from backend.services.maps_service import mock_polling_centers
@@ -50,16 +50,17 @@ def test_gemini_fallback_handles_underage_profile():
 
 def test_adk_agent_delegates_to_gemini_fallback():
     agent = ElectionAdkAgent(Settings(gemini_api_key=None))
-    response, source = agent.run("Show timeline", None, [])
-    assert response
-    assert source == "local-fallback"
+    result = agent.run("Show timeline", None, [])
+    assert result.response
+    assert result.source == "local-fallback"
+    assert result.agent == "timeline_agent"
 
 
 def test_adk_detection_uses_package_metadata(monkeypatch):
     agent = ElectionAdkAgent(Settings(gemini_api_key=None))
 
     def fake_import(name, *args, **kwargs):
-        if name == "google.adk":
+        if name in {"google.adk", "agent_kit"}:
             raise ImportError("namespace unavailable")
         return original_import(name, *args, **kwargs)
 
@@ -67,6 +68,21 @@ def test_adk_detection_uses_package_metadata(monkeypatch):
     monkeypatch.setattr("builtins.__import__", fake_import)
     monkeypatch.setattr(importlib.metadata, "version", lambda package: "0.1.0" if package == "google-adk" else "0")
     assert agent._detect_adk() is True
+
+
+def test_orchestrator_routes_specialist_agents():
+    agent = ElectionAdkAgent(Settings(gemini_api_key=None))
+    assert agent.classify_intent("Am I eligible to vote?") == "eligibility"
+    assert agent.classify_intent("What documents do I need?") == "documents"
+    assert agent.classify_intent("Where is my polling booth?") == "polling"
+    assert agent.classify_intent("What are the latest election results?") == "realtime"
+    assert agent.classify_intent("Explain how voting works") == "general"
+
+
+def test_maps_adk_tool_reports_missing_key(monkeypatch):
+    monkeypatch.delenv("GOOGLE_MAPS_API_KEY", raising=False)
+    result = google_maps_polling_guidance("Delhi")
+    assert result["status"] == "api_key_missing"
 
 
 def test_timeline_without_profile_prompts_personalization():

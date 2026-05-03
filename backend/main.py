@@ -7,7 +7,7 @@ from backend.config import Settings, get_settings
 from backend.models import ChatRequest, ChatResponse, UserProfile, UserProfileResponse
 from backend.services.adk_agent import ElectionAdkAgent
 from backend.services.firestore_service import FirestoreService
-from backend.services.maps_service import mock_polling_centers
+from backend.services.maps_service import lookup_polling_centers
 from backend.services.timeline_service import eligibility_guidance, generate_timeline
 
 settings = get_settings()
@@ -67,6 +67,7 @@ def health() -> dict[str, object]:
         "status": "ok",
         "firestore": firestore_service.enabled,
         "adk_available": agent.adk_available,
+        "adk_app_built": agent.adk_app is not None,
         "ai_framework": "Google ADK",
         "gemini_model": settings.gemini_model,
     }
@@ -89,10 +90,17 @@ def chat(request: ChatRequest, store: FirestoreService = Depends(get_firestore))
     profile = request.profile or store.get_profile(request.user_id)
     store.append_chat(request.user_id, "user", request.message)
     history = store.get_chat_history(request.user_id)
-    response, source = agent.run(request.message, profile, history)
-    store.append_chat(request.user_id, "assistant", response)
+    result = agent.run(request.message, profile, history)
+    store.append_chat(request.user_id, "assistant", result.response)
     updated_history = store.get_chat_history(request.user_id)
-    return ChatResponse(response=response, user_id=request.user_id, history=updated_history, data_source=source)
+    return ChatResponse(
+        response=result.response,
+        user_id=request.user_id,
+        history=updated_history,
+        data_source=result.source,
+        agent=result.agent,
+        intent=result.intent,
+    )
 
 
 @app.get("/timeline")
@@ -102,6 +110,7 @@ def timeline(user_id: str = Query(default="demo-user"), store: FirestoreService 
 
 
 @app.get("/polling-centers")
-def polling_centers(user_id: str = Query(default="demo-user"), store: FirestoreService = Depends(get_firestore)):
+async def polling_centers(user_id: str = Query(default="demo-user"), store: FirestoreService = Depends(get_firestore)):
     profile = store.get_profile(user_id)
-    return {"user_id": user_id, "centers": mock_polling_centers(profile), "mode": "mock"}
+    result = await lookup_polling_centers(profile, settings)
+    return {"user_id": user_id, **result}
