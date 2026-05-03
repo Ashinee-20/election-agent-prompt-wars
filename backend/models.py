@@ -64,5 +64,19 @@ class TimelineResponse(BaseModel):
     note: str
 
 
+class PollingCenter(BaseModel):
+    name: str
+    address: str
+    distance: str
+    maps_place_id: str | None = None
+
+
+class PollingCentersResponse(BaseModel):
+    user_id: str
+    centers: list[PollingCenter]
+    mode: str
+    note: str | None = None
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()

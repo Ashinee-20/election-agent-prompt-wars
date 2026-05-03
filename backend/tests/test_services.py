@@ -85,6 +85,13 @@ def test_maps_adk_tool_reports_missing_key(monkeypatch):
     assert result["status"] == "api_key_missing"
 
 
+def test_maps_adk_tool_reports_available_when_key_exists(monkeypatch):
+    monkeypatch.setenv("GOOGLE_MAPS_API_KEY", "fake")
+    result = google_maps_polling_guidance("Delhi")
+    assert result["status"] == "available"
+    assert "Delhi" in result["guidance"]
+
+
 def test_timeline_without_profile_prompts_personalization():
     timeline = generate_timeline("anonymous", None)
     assert timeline.generated_for is None

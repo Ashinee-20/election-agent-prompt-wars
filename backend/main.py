@@ -1,10 +1,20 @@
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+import base64
+
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+try:
+    import firebase_admin
+    from firebase_admin import auth, credentials
+except ImportError:
+    firebase_admin = None
+    auth = None
+    credentials = None
+
 from backend.config import Settings, get_settings
-from backend.models import ChatRequest, ChatResponse, UserProfile, UserProfileResponse
+from backend.models import ChatRequest, ChatResponse, PollingCentersResponse, TimelineResponse, UserProfile, UserProfileResponse
 from backend.services.adk_agent import ElectionAdkAgent
 from backend.services.firestore_service import FirestoreService
 from backend.services.maps_service import lookup_polling_centers
@@ -21,7 +31,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
     allow_credentials=settings.cors_origins != ["*"],
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -30,9 +40,27 @@ agent = ElectionAdkAgent(settings)
 
 app.mount("/static", StaticFiles(directory="frontend"), name="static")
 
+FAVICON_BYTES = base64.b64decode(
+    "AAABAAEAEBAAAAEAIABoBAAAFgAAACgAAAAQAAAAIAAAAAEAIAAAAAAAQAQAAAAAAAAAAAAAAAAAAAAAAAD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A"
+    "////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A"
+    "////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A"
+    "////AP///wD///8A////AP///wD///8A"
+)
+
 
 def get_firestore() -> FirestoreService:
     return firestore_service
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    response.headers["Content-Security-Policy"] = "default-src 'self'; connect-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:"
+    return response
 
 
 def verify_optional_firebase_token(
@@ -44,21 +72,25 @@ def verify_optional_firebase_token(
     scheme, _, token = authorization.partition(" ")
     if scheme.lower() != "bearer" or not token:
         raise HTTPException(status_code=401, detail="Invalid Authorization header")
+    if not firebase_admin or not auth or not credentials:
+        raise HTTPException(status_code=401, detail="Firebase token verification failed")
     try:
-        import firebase_admin
-        from firebase_admin import auth, credentials
-
         if not firebase_admin._apps:
             firebase_admin.initialize_app(credentials.ApplicationDefault(), {"projectId": app_settings.firebase_project_id})
         decoded = auth.verify_id_token(token)
         return decoded.get("uid")
     except Exception as exc:
-        raise HTTPException(status_code=401, detail=f"Firebase token verification failed: {exc}") from exc
+        raise HTTPException(status_code=401, detail="Firebase token verification failed") from exc
 
 
 @app.get("/")
 def index() -> FileResponse:
     return FileResponse("frontend/index.html")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon() -> Response:
+    return Response(content=FAVICON_BYTES, media_type="image/x-icon")
 
 
 @app.get("/health")
@@ -103,14 +135,14 @@ def chat(request: ChatRequest, store: FirestoreService = Depends(get_firestore))
     )
 
 
-@app.get("/timeline")
-def timeline(user_id: str = Query(default="demo-user"), store: FirestoreService = Depends(get_firestore)):
+@app.get("/timeline", response_model=TimelineResponse)
+def timeline(user_id: str = Query(default="demo-user"), store: FirestoreService = Depends(get_firestore)) -> TimelineResponse:
     profile = store.get_profile(user_id)
     return generate_timeline(user_id, profile)
 
 
-@app.get("/polling-centers")
-async def polling_centers(user_id: str = Query(default="demo-user"), store: FirestoreService = Depends(get_firestore)):
+@app.get("/polling-centers", response_model=PollingCentersResponse)
+async def polling_centers(user_id: str = Query(default="demo-user"), store: FirestoreService = Depends(get_firestore)) -> PollingCentersResponse:
     profile = store.get_profile(user_id)
     result = await lookup_polling_centers(profile, settings)
-    return {"user_id": user_id, **result}
+    return PollingCentersResponse(user_id=user_id, **result)
