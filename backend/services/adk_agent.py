@@ -1,22 +1,10 @@
 import os
 from dataclasses import dataclass
-from importlib.metadata import PackageNotFoundError, version
 from typing import Literal
-
-from google.genai.types import HttpRetryOptions
 
 from backend.config import Settings
 from backend.models import ChatMessage, UserProfile
 from backend.services.gemini_service import GeminiService
-
-try:
-    from google.adk.agents import LlmAgent
-    from google.adk.apps.app import App
-    from google.adk.models import Gemini
-except ImportError:
-    LlmAgent = None
-    App = None
-    Gemini = None
 
 Intent = Literal["eligibility", "timeline", "documents", "polling", "realtime", "general"]
 
@@ -63,7 +51,12 @@ def google_maps_polling_guidance(location: str) -> dict[str, str]:
 
 def build_actual_adk_agents(settings: Settings):
     """Build real ADK LlmAgent objects when google.adk is available in the runtime."""
-    if not LlmAgent or not App or not Gemini:
+    try:
+        from google.adk.agents import LlmAgent
+        from google.adk.apps.app import App
+        from google.adk.models import Gemini
+        from google.genai.types import HttpRetryOptions
+    except Exception:
         return None
 
     retry_options = HttpRetryOptions(initial_delay=1, max_delay=3, attempts=10)
@@ -205,13 +198,18 @@ class ElectionOrchestratorAgent:
         }
 
     def _detect_adk(self) -> bool:
-        if LlmAgent and App and Gemini:
-            return True
         try:
-            version("google-adk")
+            import google.adk  # noqa: F401
+
             return True
-        except PackageNotFoundError:
-            return False
+        except Exception:
+            try:
+                from importlib.metadata import version
+
+                version("google-adk")
+                return True
+            except Exception:
+                return False
 
     def classify_intent(self, message: str) -> Intent:
         text = message.lower()
